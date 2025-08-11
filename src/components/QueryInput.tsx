@@ -171,22 +171,38 @@ export default function QueryInput() {
       return copy;
     });
     try {
-      const payload: any = { rnc: row.rnc, ncf: row.ncf };
-      if (row.ncf.startsWith("E")) payload.securityCode = row.securityCode;
+      const payload: any = {
+        queries: [
+          {
+            rnc: row.rnc,
+            ncf: row.ncf,
+            ...(row.ncf.startsWith("E")
+              ? { securityCode: row.securityCode }
+              : {}),
+          },
+        ],
+      };
+
       console.log("Validating row:", payload);
       const res = await fetch("http://localhost:3000/refund", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
       const data = await res.json();
       setRows((prev) => {
         const copy = [...prev];
         if (!copy[index]) return prev;
-        copy[index].status = data.status === "valido" ? "valida" : "invalida";
+        // Assuming the backend returns the status in the first query result
+        copy[index].status =
+          data.queries?.[0]?.status === "valido" ? "valida" : "invalida";
         return copy;
       });
-    } catch {
+    } catch (error) {
+      console.error("Validation error:", error);
       setRows((prev) => {
         const copy = [...prev];
         if (!copy[index]) return prev;
