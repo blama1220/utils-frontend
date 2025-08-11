@@ -1,31 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from 'react';
+import { CATEGORY_DEFAULT, CATEGORY_LIMITS } from '../constants/categories';
+import { formatCurrency, parseAmount } from '../utils/formatting';
 
 declare const XLSX: any;
-
-const CATEGORY_DEFAULT = 'Vehículo/Combustible';
-
-const CATEGORY_LIMITS: Record<string, number> = {
-  'Vehículo/Combustible': 10000,
-  'Alimentación/Dieta': 15000,
-};
-
-const currencyFmt = new Intl.NumberFormat('es-DO', {
-  style: 'currency',
-  currency: 'DOP',
-  minimumFractionDigits: 2,
-});
-
-function formatCurrency(n: number) {
-  return currencyFmt.format(Number.isFinite(n) ? n : 0);
-}
-
-function parseAmount(str: string) {
-  if (str == null) return 0;
-  const s = String(str).replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.');
-  const n = parseFloat(s);
-  return Number.isFinite(n) ? n : 0;
-}
 
 export default function QueryInput() {
   const [rows, setRows] = useState([
@@ -202,17 +180,17 @@ export default function QueryInput() {
             <span className="material-icons-outlined text-3xl text-blue-600 mr-4">receipt_long</span>
             <h2 className="text-2xl font-semibold text-gray-700">Consulta de Comprobantes</h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
+          <div className="w-full">
+            <table className="w-full text-left table-fixed">
               <thead>
                 <tr className="border-b-2 border-gray-200">
-                  <th className="py-3 px-4 font-semibold text-gray-600">RNC / Cédula</th>
-                  <th className="py-3 px-4 font-semibold text-gray-600">NCF</th>
-                  <th className="py-3 px-4 font-semibold text-gray-600">Monto</th>
-                  <th className="py-3 px-4 font-semibold text-gray-600">Código Seguridad</th>
-                  <th className="py-3 px-4 font-semibold text-gray-600">Categoría</th>
-                  <th className="py-3 px-4 font-semibold text-gray-600">Estado</th>
-                  <th className="py-3 px-4 font-semibold text-gray-600"></th>
+                  <th className="py-3 px-2 font-semibold text-gray-600 w-[140px]">RNC / Cédula</th>
+                  <th className="py-3 px-2 font-semibold text-gray-600 w-[100px]">NCF</th>
+                  <th className="py-3 px-2 font-semibold text-gray-600 w-[120px]">Monto</th>
+                  <th className="py-3 px-2 font-semibold text-gray-600 w-[100px]">Código Seg.</th>
+                  <th className="py-3 px-2 font-semibold text-gray-600 w-[180px]">Categoría</th>
+                  <th className="py-3 px-2 font-semibold text-gray-600 w-[100px]">Estado</th>
+                  <th className="py-3 px-2 font-semibold text-gray-600 w-[40px]"></th>
                 </tr>
               </thead>
               <tbody>
@@ -220,35 +198,35 @@ export default function QueryInput() {
                   const needsSec = r.ncf?.trim().toUpperCase().startsWith('E');
                   return (
                     <tr key={i} className="border-b border-gray-100">
-                      <td className="py-4 px-4">
-                        <input className="w-32 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="RNC o cédula" type="text" value={r.rnc} onChange={(e) => updateRow(i, { rnc: e.target.value })} />
+                      <td className="py-2 px-2">
+                        <input className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" placeholder="RNC o cédula" type="text" value={r.rnc} onChange={(e) => updateRow(i, { rnc: e.target.value })} />
                       </td>
-                      <td className="py-4 px-4">
-                        <input className="w-24 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="NCF" type="text" value={r.ncf} onChange={(e) => updateRow(i, { ncf: e.target.value.toUpperCase().trim() })} />
+                      <td className="py-2 px-2">
+                        <input className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" placeholder="NCF" type="text" value={r.ncf} onChange={(e) => updateRow(i, { ncf: e.target.value.toUpperCase().trim() })} />
                       </td>
-                      <td className="py-4 px-4">
+                      <td className="py-2 px-2">
                         <div className="relative">
-                          <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">RD$</span>
-                          <input className="w-28 p-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" type="text" value={r.amount} onChange={(e) => updateRow(i, { amount: e.target.value })} onBlur={() => onAmountBlur(i)} />
+                          <span className="absolute inset-y-0 left-0 pl-2 flex items-center text-gray-500 text-sm">RD$</span>
+                          <input className="w-full p-2 pl-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" type="text" value={r.amount} onChange={(e) => updateRow(i, { amount: e.target.value })} onBlur={() => onAmountBlur(i)} />
                         </div>
                       </td>
-                      <td className="py-4 px-4">
+                      <td className="py-2 px-2">
                         {needsSec ? (
                           <div className="relative">
-                            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
-                              <span className="material-icons-outlined">lock</span>
+                            <span className="absolute inset-y-0 left-0 pl-2 flex items-center text-gray-400">
+                              <span className="material-icons-outlined text-sm">lock</span>
                             </span>
-                            <input className="w-24 p-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" type="password" value={r.securityCode} onChange={(e) => updateRow(i, { securityCode: e.target.value })} />
+                            <input className="w-full p-2 pl-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" type="password" value={r.securityCode} onChange={(e) => updateRow(i, { securityCode: e.target.value })} />
                           </div>
                         ) : (
                           <div className="flex items-center justify-center text-gray-400">
-                            <span className="material-icons-outlined">lock</span>
+                            <span className="material-icons-outlined text-sm">lock</span>
                           </div>
                         )}
                       </td>
-                      <td className="py-4 px-4">
+                      <td className="py-2 px-2">
                         <div className="relative">
-                          <select className="appearance-none w-48 bg-white border border-gray-300 text-gray-700 py-2 px-4 pr-8 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500" value={r.category} onChange={(e) => updateRow(i, { category: e.target.value })}>
+                          <select className="w-full bg-white border border-gray-300 text-gray-700 py-2 px-2 pr-8 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 text-sm" value={r.category} onChange={(e) => updateRow(i, { category: e.target.value })}>
                             {Object.keys(CATEGORY_LIMITS).map((c) => (
                               <option key={c}>{c}</option>
                             ))}
@@ -258,10 +236,10 @@ export default function QueryInput() {
                           </div>
                         </div>
                       </td>
-                      <td className="py-4 px-4">
+                      <td className="py-2 px-2">
                         <StatusChip status={r.status} />
                       </td>
-                      <td className="py-4 px-4 text-center">
+                      <td className="py-2 px-2 text-center">
                         {rows.length > 1 && (
                           <button className="text-red-500 hover:text-red-700" onClick={() => handleRemoveRow(i)}>
                             <span className="material-icons-outlined">delete</span>
