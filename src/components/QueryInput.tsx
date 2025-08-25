@@ -606,19 +606,19 @@ export default function QueryInput() {
         className="p-4 border-l-4 bg-gray-50 rounded-lg mb-6"
         style={{ borderColor: info.hex }}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-start flex-1 min-w-0">
             <span
-              className={`material-icons-outlined text-2xl mr-3 ${info.color}`}
+              className={`material-icons-outlined text-xl mr-2 mt-0.5 flex-shrink-0 ${info.color}`}
             >
               {name === "Vehículo/Combustible"
                 ? "directions_car"
                 : "restaurant"}
             </span>
-            <h4 className="font-semibold text-lg">{name}</h4>
+            <h4 className="font-semibold text-base leading-tight break-words">{name}</h4>
           </div>
         </div>
-        <p className="text-sm text-gray-600 mt-2">
+        <p className="text-sm text-gray-600 mb-3">
           Límite: {formatCurrency(limit)}{" "}
           <span className={info.color}>({info.label})</span>
         </p>
@@ -629,9 +629,9 @@ export default function QueryInput() {
               style={{ width: `${info.ratio * 100}%` }}
             ></div>
           </div>
-          <div className="flex justify-between text-sm text-gray-500 mt-1">
-            <span>Consumido: {formatCurrency(consumed)}</span>
-            <span>Disponible: {formatCurrency(remaining)}</span>
+          <div className="flex flex-col sm:flex-row sm:justify-between text-sm text-gray-500 mt-2 gap-1">
+            <span className="break-words">Consumido: {formatCurrency(consumed)}</span>
+            <span className="break-words">Disponible: {formatCurrency(remaining)}</span>
           </div>
         </div>
       </div>
@@ -753,8 +753,8 @@ export default function QueryInput() {
   };
 
   return (
-    <div className="grid grid-cols-12 gap-6">
-      <div className="col-span-12 xl:col-span-9 2xl:col-span-10">
+    <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+      <div className="xl:col-span-3">
         <div className="bg-white p-6 rounded-2xl shadow-lg">
           <div className="flex items-center mb-6">
             <span className="material-icons-outlined text-3xl text-blue-600 mr-4">
@@ -1067,7 +1067,7 @@ export default function QueryInput() {
           </div>
         </div>
       </div>
-      <div className="col-span-12 xl:col-span-3 2xl:col-span-2">
+      <div className="xl:col-span-1">
         <div className="bg-white p-6 rounded-2xl shadow-lg h-full">
           <h3 className="text-2xl font-semibold mb-6">Límites de Gastos</h3>
           <p className="text-gray-500 mb-6">
