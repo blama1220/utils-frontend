@@ -730,28 +730,6 @@ export default function QueryInput() {
     downloadPDF(validIndices);
   };
 
-  const handleDownloadTemplate = async () => {
-    try {
-      const response = await fetch('/Recuadro de reembolsos - Transporte y Alimentos.xlsx');
-      if (!response.ok) {
-        throw new Error('No se pudo descargar el template');
-      }
-      
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'Plantilla-Comprobantes-Fiscales.xlsx';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error('Error downloading template:', error);
-      alert('Error al descargar la plantilla. Por favor, intente nuevamente.');
-    }
-  };
-
   return (
     <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
       <div className="xl:col-span-3">
@@ -1011,14 +989,6 @@ export default function QueryInput() {
                 add_circle_outline
               </span>
               AGREGAR FILA
-            </button>
-            
-            <button
-              onClick={handleDownloadTemplate}
-              className="bg-orange-600 hover:bg-orange-700 text-white font-semibold py-2 px-6 rounded-lg flex items-center"
-            >
-              <span className="material-icons-outlined mr-2">download</span>
-              DESCARGAR PLANTILLA
             </button>
             
             <label className="bg-white hover:bg-gray-100 text-green-600 font-semibold py-2 px-6 rounded-lg border border-green-600 flex items-center cursor-pointer">
