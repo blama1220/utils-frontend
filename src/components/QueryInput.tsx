@@ -1,14 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { CATEGORY_DEFAULT, CATEGORY_LIMITS } from "../constants/constants";
 
 declare const XLSX: any;
-
-const CATEGORY_DEFAULT = "Vehículo/Combustible";
-
-const CATEGORY_LIMITS: Record<string, number> = {
-  "Vehículo/Combustible": 10000,
-  "Alimentación/Dieta": 15000,
-};
 
 const currencyFmt = new Intl.NumberFormat("es-DO", {
   style: "currency",
@@ -16,34 +10,60 @@ const currencyFmt = new Intl.NumberFormat("es-DO", {
   minimumFractionDigits: 2,
 });
 
+const STORAGE_KEY = "comprobante-fiscal-rows";
+
+interface Row {
+  rnc: string;
+  ncf: string;
+  securityCode: string;
+  amount: string;
+  status: string;
+  category: string;
+  errors?: string[];
+  dgii?: any;
+}
+
+const getInitialRows = (): Row[] => {
+  const storedRows = localStorage.getItem(STORAGE_KEY);
+  if (storedRows) {
+    try {
+      return JSON.parse(storedRows);
+    } catch {
+      // sigue al default
+    }
+  }
+  return [
+    {
+      rnc: "",
+      ncf: "",
+      securityCode: "",
+      amount: "",
+      status: "",
+      category: CATEGORY_DEFAULT,
+    },
+  ];
+};
+
 export default function QueryInput() {
-  // Utility function for debouncing
+  // Debounce sin re-renders
   function useDebounce<T extends (...args: any[]) => any>(
     callback: T,
     delay: number
-  ): (...args: Parameters<T>) => void {
-    const [timeoutId, setTimeoutId] = useState<number | undefined>(undefined);
-
+  ) {
+    const tRef = useRef<number | null>(null);
+    const cbRef = useRef(callback);
     useEffect(() => {
+      cbRef.current = callback;
       return () => {
-        if (timeoutId) {
-          window.clearTimeout(timeoutId);
-        }
+        if (tRef.current) window.clearTimeout(tRef.current);
       };
-    }, [timeoutId]);
-
+    }, [callback]);
     return useCallback(
       (...args: Parameters<T>) => {
-        if (timeoutId) {
-          window.clearTimeout(timeoutId);
-        }
-        setTimeoutId(
-          window.setTimeout(() => {
-            callback(...args);
-          }, delay)
-        );
+        if (tRef.current) window.clearTimeout(tRef.current);
+        tRef.current = window.setTimeout(() => cbRef.current(...args), delay);
       },
-      [callback, delay, timeoutId]
+      [delay]
     );
   }
 
@@ -53,32 +73,18 @@ export default function QueryInput() {
 
   function parseAmount(str: string) {
     if (str == null) return 0;
-    // First remove everything except digits, dots and commas
     const cleaned = String(str).replace(/[^\d.,-]/g, "");
-
-    // If the string has both dot and comma, treat dot as thousands separator and comma as decimal
     if (cleaned.includes(".") && cleaned.includes(",")) {
       const s = cleaned.replace(/\./g, "").replace(",", ".");
       const n = parseFloat(s);
       return Number.isFinite(n) ? n : 0;
     }
-
-    // If there's only one dot or comma, treat it as decimal point
     const s = cleaned.replace(",", ".");
     const n = parseFloat(s);
     return Number.isFinite(n) ? n : 0;
   }
 
-  const [rows, setRows] = useState([
-    {
-      rnc: "",
-      ncf: "",
-      securityCode: "",
-      amount: "",
-      status: "",
-      category: CATEGORY_DEFAULT,
-    },
-  ]);
+  const [rows, setRows] = useState(getInitialRows);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -102,7 +108,7 @@ export default function QueryInput() {
           category: CATEGORY_DEFAULT,
         };
       });
-      setRows(formatted.length ? formatted : rows);
+      setRows((prev) => (formatted.length ? formatted : prev));
     };
     reader.readAsBinaryString(file);
   };
@@ -113,7 +119,7 @@ export default function QueryInput() {
       const oldRow = copy[i];
       copy[i] = { ...oldRow, ...patch };
 
-      // Clear status only if validation-related fields have meaningful changes
+      // reset de status si cambian campos relevantes
       if (
         (patch.rnc !== undefined &&
           patch.rnc !== oldRow.rnc &&
@@ -154,7 +160,6 @@ export default function QueryInput() {
       updateRow(i, { amount: "" });
       return;
     }
-    // Format with Dominican Republic locale (using comma as decimal separator)
     const formatted = n.toLocaleString("es-DO", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -162,16 +167,29 @@ export default function QueryInput() {
     updateRow(i, { amount: formatted });
   };
 
-  const validateRow = async (row: any, index: number) => {
+  function isValidFromResult(result: any) {
+    if (!result) return false;
+    const estado = (result.estado || "").toString().toUpperCase();
+    return (
+      estado.includes("ACEPT") ||
+      estado.includes("VIGENTE") ||
+      estado.includes("VALIDO") ||
+      estado.includes("VÁLIDO")
+    );
+  }
+
+  const validateRow = async (row: Row, index: number) => {
     if (!row.rnc || !row.ncf) return;
     setRows((prev) => {
       const copy = [...prev];
       if (!copy[index]) return prev;
       copy[index].status = "Validando...";
+      copy[index].errors = [];
       return copy;
     });
+
     try {
-      const payload: any = {
+      const payload = {
         queries: [
           {
             rnc: row.rnc,
@@ -183,22 +201,38 @@ export default function QueryInput() {
         ],
       };
 
-      console.log("Validating row:", payload);
-      const res = await fetch("http://localhost:3000/refund", {
+      const res = await fetch("http://localhost:3000/refund?action=validate", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      const json = await res.json();
+      const item = json?.data?.validations?.[0];
+
       setRows((prev) => {
         const copy = [...prev];
         if (!copy[index]) return prev;
-        // Assuming the backend returns the status in the first query result
-        copy[index].status =
-          data.queries?.[0]?.status === "valido" ? "valida" : "invalida";
+
+        if (!item) {
+          copy[index].status = "error";
+          copy[index].errors = ["Respuesta inválida del servidor"];
+          copy[index].dgii = undefined;
+          return copy;
+        }
+
+        if (item.error) {
+          copy[index].status = "error";
+          copy[index].errors = [item.error];
+          copy[index].dgii = undefined;
+          return copy;
+        }
+
+        copy[index].dgii = item.result;
+        copy[index].errors = [];
+        copy[index].status = isValidFromResult(item.result)
+          ? "valida"
+          : "invalida";
         return copy;
       });
     } catch (error) {
@@ -207,6 +241,8 @@ export default function QueryInput() {
         const copy = [...prev];
         if (!copy[index]) return prev;
         copy[index].status = "error";
+        copy[index].errors = ["No se pudo validar el comprobante"];
+        copy[index].dgii = undefined;
         return copy;
       });
     }
@@ -222,7 +258,7 @@ export default function QueryInput() {
     ) {
       validateRow(row, index);
     }
-  }, 500); // 500ms delay
+  }, 500);
 
   useEffect(() => {
     rows.forEach((r, i) => {
@@ -253,6 +289,25 @@ export default function QueryInput() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+  }, [rows]);
+
+  const handleClearAll = () => {
+    if (window.confirm("¿Está seguro que desea limpiar toda la tabla?")) {
+      setRows([
+        {
+          rnc: "",
+          ncf: "",
+          securityCode: "",
+          amount: "",
+          status: "",
+          category: CATEGORY_DEFAULT,
+        },
+      ]);
+    }
+  };
+
   const sums = useMemo(() => {
     return rows.reduce((acc: Record<string, number>, r) => {
       const cat = r.category || CATEGORY_DEFAULT;
@@ -261,21 +316,30 @@ export default function QueryInput() {
     }, {} as Record<string, number>);
   }, [rows]);
 
+  const BAR_HEX: Record<string, string> = {
+    green: "#22c55e",
+    yellow: "#eab308",
+    red: "#ef4444",
+  };
+
   const infoFor = (consumed: number, limit: number) => {
     const ratio = limit > 0 ? consumed / limit : 0;
-    let color = "text-green-600";
-    let bar = "bg-green-500";
-    let label = "Dentro del límite";
+    let color = "text-green-600",
+      bar = "bg-green-500",
+      hex = BAR_HEX.green,
+      label = "Dentro del límite";
     if (ratio >= 1) {
       color = "text-red-600";
       bar = "bg-red-500";
+      hex = BAR_HEX.red;
       label = "Excedido";
     } else if (ratio >= 0.8) {
       color = "text-yellow-600";
       bar = "bg-yellow-500";
+      hex = BAR_HEX.yellow;
       label = "Alerta de tope";
     }
-    return { ratio: Math.min(ratio, 1), color, bar, label };
+    return { ratio: Math.min(ratio, 1), color, bar, hex, label };
   };
 
   const StatusChip = ({
@@ -288,34 +352,43 @@ export default function QueryInput() {
     index: number;
   }) => {
     const showRetry = status === "error" || status === "invalida";
-
     return (
       <div className="flex items-center gap-2">
-        {status === "valida" && (
-          <span className="bg-green-100 text-green-800 text-sm font-medium px-3 py-1 rounded-full">
-            Válida
-          </span>
-        )}
-        {status === "invalida" && (
-          <span className="bg-red-100 text-red-800 text-sm font-medium px-3 py-1 rounded-full">
-            Inválida
-          </span>
-        )}
-        {status === "error" && (
-          <span className="bg-yellow-100 text-yellow-800 text-sm font-medium px-3 py-1 rounded-full">
-            Error
-          </span>
-        )}
-        {status === "Validando..." && (
-          <span className="bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded-full">
-            Validando...
-          </span>
-        )}
-        {status === "" && (
-          <span className="bg-gray-100 text-gray-800 text-sm font-medium px-3 py-1 rounded-full">
-            Pendiente
-          </span>
-        )}
+        <div className="relative group">
+          {status === "valida" && (
+            <span className="bg-green-100 text-green-800 text-sm font-medium px-3 py-1 rounded-full">
+              Válida
+            </span>
+          )}
+          {status === "invalida" && (
+            <span className="bg-red-100 text-red-800 text-sm font-medium px-3 py-1 rounded-full">
+              Inválida
+            </span>
+          )}
+          {status === "error" && (
+            <span className="bg-yellow-100 text-yellow-800 text-sm font-medium px-3 py-1 rounded-full">
+              Error
+            </span>
+          )}
+          {status === "Validando..." && (
+            <span className="bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded-full">
+              Validando...
+            </span>
+          )}
+          {status === "" && (
+            <span className="bg-gray-100 text-gray-800 text-sm font-medium px-3 py-1 rounded-full">
+              Pendiente
+            </span>
+          )}
+
+          {row.errors && row.errors.length > 0 && (
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600 whitespace-pre-line shadow-lg z-10">
+              {row.errors.join("\n")}
+              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-50 border-r border-b border-red-200 rotate-45"></div>
+            </div>
+          )}
+        </div>
+
         {showRetry && (
           <button
             onClick={() => validateRow(row, index)}
@@ -337,7 +410,7 @@ export default function QueryInput() {
     return (
       <div
         className="p-4 border-l-4 bg-gray-50 rounded-lg mb-6"
-        style={{ borderColor: info.bar.replace("bg", "#").replace("-500", "") }}
+        style={{ borderColor: info.hex }}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center">
@@ -372,8 +445,8 @@ export default function QueryInput() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-      <div className="lg:col-span-3">
+    <div className="grid grid-cols-12 gap-6">
+      <div className="col-span-12 xl:col-span-9 2xl:col-span-10">
         <div className="bg-white p-6 rounded-2xl shadow-lg">
           <div className="flex items-center mb-6">
             <span className="material-icons-outlined text-3xl text-blue-600 mr-4">
@@ -448,7 +521,7 @@ export default function QueryInput() {
                               </span>
                               <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block bg-red-50 border border-red-200 rounded-lg px-3 py-1 text-xs text-red-600 whitespace-nowrap shadow-lg">
                                 Debe tener entre 9 y 11 dígitos
-                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-50 border-r border-b border-red-200 transform rotate-45"></div>
+                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-50 border-r border-b border-red-200 rotate-45"></div>
                               </div>
                             </div>
                           )}
@@ -491,7 +564,7 @@ export default function QueryInput() {
                               </span>
                               <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block bg-red-50 border border-red-200 rounded-lg px-3 py-1 text-xs text-red-600 whitespace-nowrap shadow-lg">
                                 NCF debe tener al menos 11 caracteres
-                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-50 border-r border-b border-red-200 transform rotate-45"></div>
+                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-50 border-r border-b border-red-200 rotate-45"></div>
                               </div>
                             </div>
                           )}
@@ -599,10 +672,17 @@ export default function QueryInput() {
                 onChange={handleFileUpload}
               />
             </label>
+            <button
+              onClick={handleClearAll}
+              className="bg-white hover:bg-gray-100 text-red-600 font-semibold py-2 px-6 rounded-lg border border-red-600 flex items-center"
+            >
+              <span className="material-icons-outlined mr-2">delete_sweep</span>
+              LIMPIAR TODO
+            </button>
           </div>
         </div>
       </div>
-      <div className="lg:col-span-1">
+      <div className="col-span-12 xl:col-span-3 2xl:col-span-2">
         <div className="bg-white p-6 rounded-2xl shadow-lg h-full">
           <h3 className="text-2xl font-semibold mb-6">Límites de Gastos</h3>
           <p className="text-gray-500 mb-6">
