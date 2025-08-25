@@ -125,22 +125,60 @@ export default function QueryInput() {
   const [rows, setRows] = useState(getInitialRows);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [isDownloading, setIsDownloading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [notifications, setNotifications] = useState<Array<{
+    id: string;
+    type: 'success' | 'error' | 'warning' | 'info';
+    message: string;
+    timestamp: number;
+  }>>([]);
+
+  const addNotification = useCallback((type: 'success' | 'error' | 'warning' | 'info', message: string) => {
+    const id = Date.now().toString();
+    setNotifications(prev => [...prev, { id, type, message, timestamp: Date.now() }]);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 5000);
+  }, []);
+
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
+    setIsProcessingFile(true);
+    setUploadProgress(0);
+    
     const reader = new FileReader();
+    reader.onprogress = (evt) => {
+      if (evt.lengthComputable) {
+        const progress = (evt.loaded / evt.total) * 50; // First 50% for reading
+        setUploadProgress(progress);
+      }
+    };
+    
     reader.onload = (evt) => {
       try {
+        setUploadProgress(60); // Processing file
+        
         const wb = XLSX.read(evt.target?.result, { type: "binary" });
         const ws = wb.Sheets[wb.SheetNames[0]];
+        
+        setUploadProgress(70); // Reading data
         
         // Get all data including headers and empty rows
         const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
         
         if (rawData.length === 0) {
-          alert('El archivo Excel está vacío o no contiene datos válidos.');
+          addNotification('error', 'El archivo Excel está vacío o no contiene datos válidos.');
+          setIsProcessingFile(false);
+          setUploadProgress(0);
           return;
         }
 
@@ -176,7 +214,9 @@ export default function QueryInput() {
         }
 
         if (headerRowIndex === -1) {
-          alert('No se encontró una fila de encabezados válida. Busque las columnas: Factura/NCF, RNC, Monto RD$');
+          addNotification('error', 'No se encontró una fila de encabezados válida. Busque las columnas: Factura/NCF, RNC, Monto RD$');
+          setIsProcessingFile(false);
+          setUploadProgress(0);
           return;
         }
 
@@ -268,9 +308,13 @@ export default function QueryInput() {
         if (detectedColumns.amount === -1) missingColumns.push('Monto RD$');
 
         if (missingColumns.length > 0) {
-          alert(`No se encontraron las siguientes columnas requeridas: ${missingColumns.join(', ')}\n\nColumnas disponibles: ${headerRow.join(', ')}`);
+          addNotification('error', `No se encontraron las siguientes columnas requeridas: ${missingColumns.join(', ')}\n\nColumnas disponibles: ${headerRow.join(', ')}`);
+          setIsProcessingFile(false);
+          setUploadProgress(0);
           return;
         }
+
+        setUploadProgress(85); // Processing rows
 
         // Process data rows (starting after header row)
         const dataRows = rawData.slice(headerRowIndex + 1);
@@ -300,16 +344,27 @@ export default function QueryInput() {
         }).filter((row: any) => row && (row.rnc || row.ncf)); // Filter out null and empty rows
 
         if (formatted.length === 0) {
-          alert('No se encontraron datos válidos en el archivo Excel.');
+          addNotification('warning', 'No se encontraron datos válidos en el archivo Excel.');
+          setIsProcessingFile(false);
+          setUploadProgress(0);
           return;
         }
 
+        setUploadProgress(100); // Complete
         setRows(formatted);
-        alert(`Se cargaron ${formatted.length} registros correctamente.`);
+        addNotification('success', `Se cargaron ${formatted.length} registros correctamente.`);
+        
+        // Reset progress after successful upload
+        setTimeout(() => {
+          setIsProcessingFile(false);
+          setUploadProgress(0);
+        }, 1000);
         
       } catch (error) {
         console.error('Error processing Excel file:', error);
-        alert('Error al procesar el archivo Excel. Verifique que el archivo sea válido.');
+        addNotification('error', 'Error al procesar el archivo Excel. Verifique que el archivo sea válido.');
+        setIsProcessingFile(false);
+        setUploadProgress(0);
       }
     };
     
@@ -340,7 +395,7 @@ export default function QueryInput() {
     });
   };
 
-  const handleAddRow = () =>
+  const handleAddRow = useCallback(() =>
     setRows((prev) => [
       ...prev,
       {
@@ -351,7 +406,7 @@ export default function QueryInput() {
         status: "",
         category: CATEGORY_DEFAULT,
       },
-    ]);
+    ]), []);
 
   const handleRemoveRow = (i: number) =>
     setRows((prev) => prev.filter((_, idx) => idx !== i));
@@ -650,22 +705,22 @@ export default function QueryInput() {
     });
   };
 
-  const handleSelectAllValid = () => {
+  const handleSelectAllValid = useCallback(() => {
     const validIndices = rows
       .map((row, index) => ({ row, index }))
       .filter(({ row }) => row.status === 'valida')
       .map(({ index }) => index);
     
     setSelectedRows(new Set(validIndices));
-  };
+  }, [rows]);
 
   const handleDeselectAll = () => {
     setSelectedRows(new Set());
   };
 
-  const downloadPDF = async (selectedIndices: number[]) => {
+  const downloadPDF = useCallback(async (selectedIndices: number[]) => {
     if (selectedIndices.length === 0) {
-      alert('No hay comprobantes seleccionados para descargar');
+      addNotification('warning', 'No hay comprobantes seleccionados para descargar');
       return;
     }
 
@@ -708,40 +763,179 @@ export default function QueryInput() {
 
       // Clear selection after successful download
       setSelectedRows(new Set());
+      addNotification('success', `PDF generado exitosamente con ${selectedIndices.length} comprobantes`);
     } catch (error) {
       console.error("PDF download error:", error);
-      alert('Error al descargar el PDF. Por favor, intente nuevamente.');
+      addNotification('error', 'Error al descargar el PDF. Por favor, intente nuevamente.');
     } finally {
       setIsDownloading(false);
     }
-  };
+  }, [rows, addNotification]);
 
   const handleDownloadSelected = () => {
     const selectedIndices = Array.from(selectedRows);
     downloadPDF(selectedIndices);
   };
 
-  const handleDownloadAllValid = () => {
+  const handleDownloadAllValid = useCallback(() => {
     const validIndices = rows
       .map((row, index) => ({ row, index }))
       .filter(({ row }) => row.status === 'valida')
       .map(({ index }) => index);
     
     downloadPDF(validIndices);
-  };
+  }, [rows, downloadPDF]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + Shift + R: Add new row (R for Row)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
+        e.preventDefault();
+        handleAddRow();
+        addNotification('info', 'Nueva fila agregada (Ctrl+Shift+R)');
+      }
+      
+      // Ctrl/Cmd + Shift + D: Download all valid
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        const validCount = rows.filter(r => r.status === 'valida').length;
+        if (validCount > 0) {
+          handleDownloadAllValid();
+        } else {
+          addNotification('warning', 'No hay comprobantes válidos para descargar');
+        }
+      }
+      
+      // Ctrl/Cmd + Shift + A: Select all valid
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
+        e.preventDefault();
+        handleSelectAllValid();
+        const validCount = rows.filter(r => r.status === 'valida').length;
+        if (validCount > 0) {
+          addNotification('info', `${validCount} comprobantes válidos seleccionados (Ctrl+Shift+A)`);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [rows, handleDownloadAllValid, handleSelectAllValid, addNotification, handleAddRow]);
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+    <>
+      {/* Notification Toast Container */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {notifications.map(notification => (
+          <div
+            key={notification.id}
+            className={`max-w-md p-4 rounded-lg shadow-lg border transition-all duration-300 ${
+              notification.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
+              notification.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+              notification.type === 'warning' ? 'bg-yellow-50 border-yellow-200 text-yellow-800' :
+              'bg-blue-50 border-blue-200 text-blue-800'
+            }`}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex">
+                <span className="material-icons-outlined text-lg mr-2 mt-0.5">
+                  {notification.type === 'success' ? 'check_circle' :
+                   notification.type === 'error' ? 'error' :
+                   notification.type === 'warning' ? 'warning' :
+                   'info'}
+                </span>
+                <p className="text-sm font-medium whitespace-pre-line">{notification.message}</p>
+              </div>
+              <button
+                onClick={() => removeNotification(notification.id)}
+                className="ml-3 text-gray-400 hover:text-gray-600"
+              >
+                <span className="material-icons-outlined text-lg">close</span>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
       <div className="xl:col-span-3">
         <div className="bg-white p-6 rounded-2xl shadow-lg">
           <div className="flex items-center mb-6">
             <span className="material-icons-outlined text-3xl text-blue-600 mr-4">
               receipt_long
             </span>
-            <h2 className="text-2xl font-semibold text-gray-700">
+            <h2 className="text-2xl font-semibold text-gray-700 flex-1">
               Consulta de Comprobantes
             </h2>
+            
+            {/* Keyboard shortcuts help */}
+            <div className="group relative">
+              <button className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                <span className="material-icons-outlined">help_outline</span>
+              </button>
+              <div className="absolute right-0 top-full mt-2 hidden group-hover:block bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-10 w-80">
+                <h4 className="font-semibold text-gray-800 mb-2">Atajos de Teclado</h4>
+                <div className="space-y-1 text-sm text-gray-600">
+                  <div className="flex justify-between">
+                    <span>Agregar fila:</span>
+                    <code className="bg-gray-100 px-2 py-1 rounded">Ctrl+Shift+R</code>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Seleccionar válidos:</span>
+                    <code className="bg-gray-100 px-2 py-1 rounded">Ctrl+Shift+A</code>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Descargar válidos:</span>
+                    <code className="bg-gray-100 px-2 py-1 rounded">Ctrl+Shift+D</code>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
+          
+          {/* Summary Statistics */}
+          <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+              <div className="flex items-center">
+                <span className="material-icons-outlined text-blue-600 mr-2">receipt</span>
+                <div>
+                  <p className="text-xs text-blue-600 font-medium">Total</p>
+                  <p className="text-lg font-bold text-blue-800">{rows.length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+              <div className="flex items-center">
+                <span className="material-icons-outlined text-green-600 mr-2">check_circle</span>
+                <div>
+                  <p className="text-xs text-green-600 font-medium">Válidas</p>
+                  <p className="text-lg font-bold text-green-800">{rows.filter(r => r.status === 'valida').length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-red-50 p-3 rounded-lg border border-red-200">
+              <div className="flex items-center">
+                <span className="material-icons-outlined text-red-600 mr-2">error</span>
+                <div>
+                  <p className="text-xs text-red-600 font-medium">Inválidas</p>
+                  <p className="text-lg font-bold text-red-800">{rows.filter(r => r.status === 'invalida' || r.status === 'error').length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+              <div className="flex items-center">
+                <span className="material-icons-outlined text-gray-600 mr-2">hourglass_empty</span>
+                <div>
+                  <p className="text-xs text-gray-600 font-medium">Pendientes</p>
+                  <p className="text-lg font-bold text-gray-800">{rows.filter(r => r.status === '' || r.status === 'Validando...').length}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -991,15 +1185,29 @@ export default function QueryInput() {
               AGREGAR FILA
             </button>
             
-            <label className="bg-white hover:bg-gray-100 text-green-600 font-semibold py-2 px-6 rounded-lg border border-green-600 flex items-center cursor-pointer">
+            <label className="bg-white hover:bg-gray-100 text-green-600 font-semibold py-2 px-6 rounded-lg border border-green-600 flex items-center cursor-pointer relative">
               <span className="material-icons-outlined mr-2">file_upload</span>
-              CARGAR EXCEL
+              {isProcessingFile ? 'PROCESANDO...' : 'CARGAR EXCEL'}
               <input
                 type="file"
                 accept=".xlsx,.xls"
                 className="hidden"
                 onChange={handleFileUpload}
+                disabled={isProcessingFile}
               />
+              {isProcessingFile && (
+                <div className="absolute inset-0 bg-green-100 rounded-lg flex items-center justify-center">
+                  <div className="w-full mx-4">
+                    <div className="text-xs text-green-700 mb-1 text-center">{Math.round(uploadProgress)}%</div>
+                    <div className="w-full bg-green-200 rounded-full h-1">
+                      <div 
+                        className="bg-green-600 h-1 rounded-full transition-all duration-300"
+                        style={{ width: `${uploadProgress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </label>
             
             <button
@@ -1050,6 +1258,7 @@ export default function QueryInput() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

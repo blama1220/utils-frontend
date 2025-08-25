@@ -33,7 +33,7 @@ export default function Header() {
             <span>Nosotros</span>
           </a>
         </nav>
-        <div className="flex items-center space-x-4">
+        {/* <div className="flex items-center space-x-4">
           <a
             className="bg-[var(--brand-primary)] text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-opacity-90 transition-opacity flex items-center space-x-2"
             href="#"
@@ -44,7 +44,7 @@ export default function Header() {
           <button className="md:hidden text-gray-600">
             <span className="material-icons-outlined">menu</span>
           </button>
-        </div>
+        </div> */}
       </div>
     </header>
   );
