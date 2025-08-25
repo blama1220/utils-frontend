@@ -21,6 +21,7 @@ interface Row {
   category: string;
   errors?: string[];
   dgii?: any;
+  selected?: boolean; // Add this for individual selection
 }
 
 const getInitialRows = (): Row[] => {
@@ -85,6 +86,8 @@ export default function QueryInput() {
   }
 
   const [rows, setRows] = useState(getInitialRows);
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -262,14 +265,19 @@ export default function QueryInput() {
 
   useEffect(() => {
     rows.forEach((r, i) => {
-      if (
-        r.rnc &&
-        r.rnc.length >= 9 &&
-        r.rnc.length <= 11 &&
-        r.ncf &&
-        r.ncf.length >= 11 &&
-        r.status === ""
-      ) {
+      const isEType = r.ncf?.trim().toUpperCase().startsWith("E");
+      
+      // Basic validation requirements
+      const hasValidRnc = r.rnc && r.rnc.length >= 9 && r.rnc.length <= 11;
+      const hasValidNcf = r.ncf && r.ncf.length >= 11;
+      const isPending = r.status === "";
+      
+      // For E-type NCF, also require security code
+      const canValidate = hasValidRnc && hasValidNcf && isPending && (
+        !isEType || (isEType && r.securityCode && r.securityCode.trim().length > 0)
+      );
+      
+      if (canValidate) {
         debouncedValidateRow(r, i);
       }
     });
@@ -444,6 +452,120 @@ export default function QueryInput() {
     );
   };
 
+  const handleSelectRow = (index: number, checked: boolean) => {
+    setSelectedRows(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(index);
+      } else {
+        newSet.delete(index);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAllValid = () => {
+    const validIndices = rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.status === 'valida')
+      .map(({ index }) => index);
+    
+    setSelectedRows(new Set(validIndices));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedRows(new Set());
+  };
+
+  const downloadPDF = async (selectedIndices: number[]) => {
+    if (selectedIndices.length === 0) {
+      alert('No hay comprobantes seleccionados para descargar');
+      return;
+    }
+
+    setIsDownloading(true);
+    try {
+      const selectedQueries = selectedIndices.map(index => {
+        const row = rows[index];
+        return {
+          rnc: row.rnc,
+          ncf: row.ncf,
+          ...(row.ncf.startsWith("E") ? { securityCode: row.securityCode } : {}),
+        };
+      });
+
+      const payload = { queries: selectedQueries };
+
+      const res = await fetch("http://localhost:3000/refund?action=download&format=stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
+      }
+
+      // Create blob and download
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `comprobantes-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      // Clear selection after successful download
+      setSelectedRows(new Set());
+    } catch (error) {
+      console.error("PDF download error:", error);
+      alert('Error al descargar el PDF. Por favor, intente nuevamente.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDownloadSelected = () => {
+    const selectedIndices = Array.from(selectedRows);
+    downloadPDF(selectedIndices);
+  };
+
+  const handleDownloadAllValid = () => {
+    const validIndices = rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.status === 'valida')
+      .map(({ index }) => index);
+    
+    downloadPDF(validIndices);
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await fetch('/Recuadro de reembolsos - Transporte y Alimentos.xlsx');
+      if (!response.ok) {
+        throw new Error('No se pudo descargar el template');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Plantilla-Comprobantes-Fiscales.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      alert('Error al descargar la plantilla. Por favor, intente nuevamente.');
+    }
+  };
+
   return (
     <div className="grid grid-cols-12 gap-6">
       <div className="col-span-12 xl:col-span-9 2xl:col-span-10">
@@ -460,6 +582,15 @@ export default function QueryInput() {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b-2 border-gray-200">
+                  <th className="py-3 px-4 font-semibold text-gray-600 w-12">
+                    <input
+                      type="checkbox"
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      checked={selectedRows.size > 0 && selectedRows.size === rows.filter(r => r.status === 'valida').length}
+                      onChange={(e) => e.target.checked ? handleSelectAllValid() : handleDeselectAll()}
+                      disabled={rows.filter(r => r.status === 'valida').length === 0}
+                    />
+                  </th>
                   <th className="py-3 px-4 font-semibold text-gray-600">
                     RNC / Cédula
                   </th>
@@ -484,6 +615,15 @@ export default function QueryInput() {
                   const needsSec = r.ncf?.trim().toUpperCase().startsWith("E");
                   return (
                     <tr key={i} className="border-b border-gray-100">
+                      <td className="py-2 px-4">
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          checked={selectedRows.has(i)}
+                          onChange={(e) => handleSelectRow(i, e.target.checked)}
+                          disabled={r.status !== 'valida'}
+                        />
+                      </td>
                       <td className="py-2 px-2">
                         <div className="relative flex items-center gap-1">
                           <input
@@ -503,13 +643,12 @@ export default function QueryInput() {
                               updateRow(i, { rnc: value });
                             }}
                             onBlur={() => {
-                              if (
-                                r.rnc &&
-                                r.rnc.length >= 9 &&
-                                r.rnc.length <= 11 &&
-                                r.ncf &&
-                                r.ncf.length >= 11
-                              ) {
+                              const isEType = r.ncf?.trim().toUpperCase().startsWith("E");
+                              const hasValidRnc = r.rnc && r.rnc.length >= 9 && r.rnc.length <= 11;
+                              const hasValidNcf = r.ncf && r.ncf.length >= 11;
+                              const hasSecurityCode = !isEType || (isEType && r.securityCode && r.securityCode.trim().length > 0);
+                              
+                              if (hasValidRnc && hasValidNcf && hasSecurityCode) {
                                 debouncedValidateRow(r, i);
                               }
                             }}
@@ -546,13 +685,12 @@ export default function QueryInput() {
                               })
                             }
                             onBlur={() => {
-                              if (
-                                r.rnc &&
-                                r.rnc.length >= 9 &&
-                                r.rnc.length <= 11 &&
-                                r.ncf &&
-                                r.ncf.length >= 11
-                              ) {
+                              const isEType = r.ncf?.trim().toUpperCase().startsWith("E");
+                              const hasValidRnc = r.rnc && r.rnc.length >= 9 && r.rnc.length <= 11;
+                              const hasValidNcf = r.ncf && r.ncf.length >= 11;
+                              const hasSecurityCode = !isEType || (isEType && r.securityCode && r.securityCode.trim().length > 0);
+                              
+                              if (hasValidRnc && hasValidNcf && hasSecurityCode) {
                                 debouncedValidateRow(r, i);
                               }
                             }}
@@ -595,13 +733,39 @@ export default function QueryInput() {
                               </span>
                             </span>
                             <input
-                              className="w-[180px] p-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                              type="password"
+                              className={`w-[180px] p-2 pl-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm ${
+                                needsSec && (!r.securityCode || r.securityCode.trim().length === 0)
+                                  ? "border-red-500 bg-red-50"
+                                  : "border-gray-300"
+                              }`}
+                              type="text"
+                              placeholder="Requerido para e-CF"
                               value={r.securityCode}
                               onChange={(e) =>
                                 updateRow(i, { securityCode: e.target.value })
                               }
+                              onBlur={() => {
+                                const isEType = r.ncf?.trim().toUpperCase().startsWith("E");
+                                const hasValidRnc = r.rnc && r.rnc.length >= 9 && r.rnc.length <= 11;
+                                const hasValidNcf = r.ncf && r.ncf.length >= 11;
+                                const hasSecurityCode = r.securityCode && r.securityCode.trim().length > 0;
+                                
+                                if (isEType && hasValidRnc && hasValidNcf && hasSecurityCode) {
+                                  debouncedValidateRow(r, i);
+                                }
+                              }}
                             />
+                            {needsSec && (!r.securityCode || r.securityCode.trim().length === 0) && (
+                              <div className="group relative">
+                                <span className="material-icons-outlined text-red-500 text-lg cursor-help absolute right-2 top-1/2 -translate-y-1/2">
+                                  error
+                                </span>
+                                <div className="absolute right-0 top-full mt-2 hidden group-hover:block bg-red-50 border border-red-200 rounded-lg px-3 py-1 text-xs text-red-600 whitespace-nowrap shadow-lg z-10">
+                                  Código de seguridad requerido para e-CF
+                                  <div className="absolute -top-1 right-4 w-2 h-2 bg-red-50 border-l border-t border-red-200 rotate-45"></div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="flex items-center justify-center text-gray-400 h-[38px]">
@@ -652,7 +816,7 @@ export default function QueryInput() {
               </tbody>
             </table>
           </div>
-          <div className="mt-8 flex justify-start space-x-4">
+          <div className="mt-8 flex flex-wrap justify-start gap-4">
             <button
               className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg flex items-center"
               onClick={handleAddRow}
@@ -662,6 +826,15 @@ export default function QueryInput() {
               </span>
               AGREGAR FILA
             </button>
+            
+            <button
+              onClick={handleDownloadTemplate}
+              className="bg-orange-600 hover:bg-orange-700 text-white font-semibold py-2 px-6 rounded-lg flex items-center"
+            >
+              <span className="material-icons-outlined mr-2">download</span>
+              DESCARGAR PLANTILLA
+            </button>
+            
             <label className="bg-white hover:bg-gray-100 text-green-600 font-semibold py-2 px-6 rounded-lg border border-green-600 flex items-center cursor-pointer">
               <span className="material-icons-outlined mr-2">file_upload</span>
               CARGAR EXCEL
@@ -672,6 +845,7 @@ export default function QueryInput() {
                 onChange={handleFileUpload}
               />
             </label>
+            
             <button
               onClick={handleClearAll}
               className="bg-white hover:bg-gray-100 text-red-600 font-semibold py-2 px-6 rounded-lg border border-red-600 flex items-center"
@@ -679,6 +853,31 @@ export default function QueryInput() {
               <span className="material-icons-outlined mr-2">delete_sweep</span>
               LIMPIAR TODO
             </button>
+
+            {/* Download buttons */}
+            <div className="flex gap-2 ml-auto">
+              <button
+                onClick={handleDownloadAllValid}
+                disabled={rows.filter(r => r.status === 'valida').length === 0 || isDownloading}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg flex items-center"
+              >
+                <span className="material-icons-outlined mr-2">
+                  {isDownloading ? 'hourglass_empty' : 'download'}
+                </span>
+                {isDownloading ? 'DESCARGANDO...' : 'DESCARGAR VÁLIDOS'}
+              </button>
+              
+              <button
+                onClick={handleDownloadSelected}
+                disabled={selectedRows.size === 0 || isDownloading}
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg flex items-center"
+              >
+                <span className="material-icons-outlined mr-2">
+                  {isDownloading ? 'hourglass_empty' : 'file_download'}
+                </span>
+                {isDownloading ? 'DESCARGANDO...' : `DESCARGAR SELECCIONADOS (${selectedRows.size})`}
+              </button>
+            </div>
           </div>
         </div>
       </div>
