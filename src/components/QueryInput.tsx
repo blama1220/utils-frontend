@@ -74,14 +74,51 @@ export default function QueryInput() {
 
   function parseAmount(str: string) {
     if (str == null) return 0;
+    // Remove everything except digits, dots and commas
     const cleaned = String(str).replace(/[^\d.,-]/g, "");
-    if (cleaned.includes(".") && cleaned.includes(",")) {
-      const s = cleaned.replace(/\./g, "").replace(",", ".");
-      const n = parseFloat(s);
-      return Number.isFinite(n) ? n : 0;
+    
+    // If empty, return 0
+    if (!cleaned) return 0;
+    
+    // Handle Dominican format: 1,000.00 (comma as thousands separator, dot as decimal)
+    // Check if we have both comma and dot
+    if (cleaned.includes(",") && cleaned.includes(".")) {
+      // Find the last dot (decimal separator)
+      const lastDotIndex = cleaned.lastIndexOf(".");
+      const lastCommaIndex = cleaned.lastIndexOf(",");
+      
+      // If dot comes after comma, treat comma as thousands separator
+      if (lastDotIndex > lastCommaIndex) {
+        const s = cleaned.replace(/,/g, ""); // Remove all commas (thousands separators)
+        const n = parseFloat(s);
+        return Number.isFinite(n) ? n : 0;
+      } else {
+        // Comma comes after dot, treat comma as decimal separator (European format)
+        const s = cleaned.replace(/\./g, "").replace(",", ".");
+        const n = parseFloat(s);
+        return Number.isFinite(n) ? n : 0;
+      }
     }
-    const s = cleaned.replace(",", ".");
-    const n = parseFloat(s);
+    
+    // Only comma (could be thousands or decimal separator)
+    if (cleaned.includes(",") && !cleaned.includes(".")) {
+      // If there are more than 3 digits after comma, it's likely a thousands separator
+      const parts = cleaned.split(",");
+      if (parts.length === 2 && parts[1].length > 3) {
+        // Treat as thousands separator
+        const s = cleaned.replace(",", "");
+        const n = parseFloat(s);
+        return Number.isFinite(n) ? n : 0;
+      } else {
+        // Treat as decimal separator
+        const s = cleaned.replace(",", ".");
+        const n = parseFloat(s);
+        return Number.isFinite(n) ? n : 0;
+      }
+    }
+    
+    // Only dot or no separators
+    const n = parseFloat(cleaned);
     return Number.isFinite(n) ? n : 0;
   }
 
@@ -92,27 +129,190 @@ export default function QueryInput() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
     const reader = new FileReader();
     reader.onload = (evt) => {
-      const wb = XLSX.read(evt.target?.result, { type: "binary" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(ws);
-      const formatted = data.map((row: any) => {
-        const low = Object.keys(row).reduce((acc: any, k: string) => {
-          acc[k.toLowerCase()] = row[k];
-          return acc;
-        }, {} as any);
-        return {
-          rnc: low["rnc"]?.toString() || "",
-          ncf: low["ncf"]?.toString().toUpperCase().trim() || "",
-          securityCode: low["securitycode"]?.toString() || "",
-          amount: low["monto"]?.toString() || "",
-          status: "",
-          category: CATEGORY_DEFAULT,
+      try {
+        const wb = XLSX.read(evt.target?.result, { type: "binary" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        
+        // Get all data including headers and empty rows
+        const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        
+        if (rawData.length === 0) {
+          alert('El archivo Excel está vacío o no contiene datos válidos.');
+          return;
+        }
+
+        console.log('Raw Excel data:', rawData);
+
+        // Find the header row by looking for our target columns
+        let headerRowIndex = -1;
+        let headerRow: any[] = [];
+        
+        console.log('Searching for headers in', rawData.length, 'rows');
+        
+        for (let i = 0; i < rawData.length; i++) {
+          const row = rawData[i] as any[];
+          if (row && row.length > 0) {
+            const rowStr = row.join('|').toLowerCase();
+            console.log(`Row ${i}:`, row);
+            console.log(`Row ${i} string:`, rowStr);
+            
+            // Look for our key columns in this row - be more flexible
+            const hasFactura = rowStr.includes('factura') || rowStr.includes('ncf');
+            const hasRnc = rowStr.includes('rnc');
+            const hasMonto = rowStr.includes('monto');
+            
+            console.log(`Row ${i} - hasFactura: ${hasFactura}, hasRnc: ${hasRnc}, hasMonto: ${hasMonto}`);
+            
+            if (hasFactura && hasRnc && hasMonto) {
+              headerRowIndex = i;
+              headerRow = row;
+              console.log('Found header row at index:', headerRowIndex);
+              break;
+            }
+          }
+        }
+
+        if (headerRowIndex === -1) {
+          alert('No se encontró una fila de encabezados válida. Busque las columnas: Factura/NCF, RNC, Monto RD$');
+          return;
+        }
+
+        console.log('Found header row at index:', headerRowIndex, 'Headers:', headerRow);
+
+        // Define the column mappings we're looking for
+        const columnMappings = {
+          ncf: ['factura/ncf', 'factura', 'ncf', 'factura / ncf'],
+          rnc: ['rnc', 'cédula', 'cedula', 'rnc/cédula', 'rnc / cédula'],
+          securityCode: ['código', 'codigo', 'código de seguridad', 'codigo de seguridad', 'security code'],
+          amount: ['monto rd$', 'monto', 'monto rd', 'valor', 'importe', 'precio'],
+          category: ['detalle del gasto', 'detalle', 'gasto', 'descripcion', 'descripción', 'concepto']
         };
-      });
-      setRows((prev) => (formatted.length ? formatted : prev));
+
+        // Function to detect category based on description text
+        const detectCategory = (description: string): string => {
+          if (!description) return CATEGORY_DEFAULT;
+          
+          const desc = description.toLowerCase().trim();
+          
+          // Keywords for Vehículo/Combustible
+          const vehicleKeywords = [
+            'vehiculo', 'vehículo', 'vehículo', 'vehiculos', 'vehículos',
+            'combustible', 'combistible', 'combustibles', 'gasolina', 'gas',
+            'diesel', 'diésel', 'petróleo', 'petroleo', 'carro', 'auto',
+            'automóvil', 'automovil', 'transporte', 'viaje', 'taxi',
+            'uber', 'chofer', 'conductor', 'parking', 'parqueo', 'peaje'
+          ];
+          
+          // Keywords for Alimentación/Dieta
+          const foodKeywords = [
+            'alimentacion', 'alimentación', 'alimento', 'alimentos',
+            'comida', 'comidas', 'dieta', 'dietas', 'almuerzo', 'desayuno',
+            'cena', 'merienda', 'restaurant', 'restaurante', 'cafeteria',
+            'cafetería', 'food', 'bebida', 'bebidas', 'snack', 'snacks',
+            'lunch', 'breakfast', 'dinner', 'cafe', 'café', 'bar',
+            'panaderia', 'panadería', 'supermercado', 'colmado'
+          ];
+          
+          // Check for vehicle/fuel keywords
+          for (const keyword of vehicleKeywords) {
+            if (desc.includes(keyword)) {
+              return "Vehículo/Combustible";
+            }
+          }
+          
+          // Check for food keywords
+          for (const keyword of foodKeywords) {
+            if (desc.includes(keyword)) {
+              return "Alimentación/Dieta";
+            }
+          }
+          
+          // Default category if no keywords match
+          return CATEGORY_DEFAULT;
+        };
+
+        // Function to find the correct column index
+        const findColumnIndex = (headerRow: any[], possibleNames: string[]) => {
+          for (let i = 0; i < headerRow.length; i++) {
+            const header = (headerRow[i] || '').toString().toLowerCase().trim();
+            if (header) {
+              for (const possibleName of possibleNames) {
+                if (header.includes(possibleName.toLowerCase()) || 
+                    possibleName.toLowerCase().includes(header)) {
+                  return i;
+                }
+              }
+            }
+          }
+          return -1;
+        };
+
+        // Detect column indices
+        const detectedColumns = {
+          ncf: findColumnIndex(headerRow, columnMappings.ncf),
+          rnc: findColumnIndex(headerRow, columnMappings.rnc),
+          securityCode: findColumnIndex(headerRow, columnMappings.securityCode),
+          amount: findColumnIndex(headerRow, columnMappings.amount),
+          category: findColumnIndex(headerRow, columnMappings.category)
+        };
+
+        console.log('Detected column indices:', detectedColumns);
+
+        // Check if we found the required columns
+        const missingColumns = [];
+        if (detectedColumns.ncf === -1) missingColumns.push('Factura/NCF');
+        if (detectedColumns.rnc === -1) missingColumns.push('RNC');
+        if (detectedColumns.amount === -1) missingColumns.push('Monto RD$');
+
+        if (missingColumns.length > 0) {
+          alert(`No se encontraron las siguientes columnas requeridas: ${missingColumns.join(', ')}\n\nColumnas disponibles: ${headerRow.join(', ')}`);
+          return;
+        }
+
+        // Process data rows (starting after header row)
+        const dataRows = rawData.slice(headerRowIndex + 1);
+        const formatted = dataRows.map((row: any[]) => {
+          if (!row || row.length === 0) return null;
+          
+          // Get category description to detect category
+          const categoryDescription = detectedColumns.category !== -1 ? 
+            (row[detectedColumns.category] || '').toString() : '';
+          
+          // Format amount using the same logic as onAmountBlur
+          const rawAmount = (row[detectedColumns.amount] || '').toString();
+          const parsedAmount = parseAmount(rawAmount);
+          const formattedAmount = parsedAmount ? parsedAmount.toLocaleString("es-DO", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }) : rawAmount;
+          
+          return {
+            rnc: (row[detectedColumns.rnc] || '').toString().replace(/\s/g, "").replace(/[^0-9]/g, ""),
+            ncf: (row[detectedColumns.ncf] || '').toString().toUpperCase().trim().replace(/\s/g, ""),
+            securityCode: detectedColumns.securityCode !== -1 ? (row[detectedColumns.securityCode] || '').toString() : "",
+            amount: formattedAmount,
+            status: "",
+            category: detectCategory(categoryDescription),
+          };
+        }).filter((row: any) => row && (row.rnc || row.ncf)); // Filter out null and empty rows
+
+        if (formatted.length === 0) {
+          alert('No se encontraron datos válidos en el archivo Excel.');
+          return;
+        }
+
+        setRows(formatted);
+        alert(`Se cargaron ${formatted.length} registros correctamente.`);
+        
+      } catch (error) {
+        console.error('Error processing Excel file:', error);
+        alert('Error al procesar el archivo Excel. Verifique que el archivo sea válido.');
+      }
     };
+    
     reader.readAsBinaryString(file);
   };
 
@@ -282,20 +482,6 @@ export default function QueryInput() {
       }
     });
   }, [rows, debouncedValidateRow]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isText =
-        target.tagName === "INPUT" || target.tagName === "TEXTAREA";
-      if (isText && e.key === "Enter") {
-        e.preventDefault();
-        handleAddRow();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
