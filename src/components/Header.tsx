@@ -1,50 +1,61 @@
 export default function Header() {
   return (
-    <header className="bg-white/80 backdrop-blur-sm sticky top-0 z-50 border-b border-gray-200">
+    <header className="bg-white/95 backdrop-blur-md sticky top-0 z-50 border-b border-[var(--gray-200)] shadow-sm">
       <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center space-x-3">
-          <span className="text-lg font-semibold text-[var(--brand-primary)]">
-            V2A Utilities
-          </span>
-          <span className="bg-gradient-to-r from-orange-400 to-pink-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
+        <div className="flex items-center space-x-4">
+          {/* V2A Logo/Brand */}
+          <div className="flex items-center space-x-3">
+            <div className="bg-white p-1 rounded-lg shadow-sm border border-[var(--gray-200)]">
+              <img 
+                src="/v2alogo.png" 
+                alt="V2A Consulting Logo" 
+                className="w-8 h-8 object-contain"
+              />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-lg font-bold text-[var(--brand-primary)] leading-tight">
+                V2A Utilities
+              </span>
+              <span className="text-xs text-[var(--gray-600)] font-medium">
+                Powered by V2A Consulting
+              </span>
+            </div>
+          </div>
+          <span className="bg-gradient-to-r from-[var(--brand-accent)] to-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm">
             BETA
           </span>
         </div>
+        
         <nav className="hidden md:flex items-center space-x-8">
           <a
-            className="text-gray-500 hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2"
+            className="text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2 font-medium"
             href="/"
           >
-            <span className="material-icons-outlined">home</span>
+            <span className="material-icons-outlined text-lg">home</span>
             <span>Inicio</span>
           </a>
           <a
-            className="text-gray-500 hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2"
+            className="text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2 font-medium"
             href="#"
           >
-            <span className="material-icons-outlined">design_services</span>
-            <span>Servicios</span>
+            <span className="material-icons-outlined text-lg">design_services</span>
+            <span>Herramientas</span>
           </a>
           <a
-            className="text-gray-500 hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2"
-            href="#"
+            className="text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2 font-medium"
+            href="https://v2aconsulting.com/es/"
+            target="_blank"
+            rel="noopener noreferrer"
           >
-            <span className="material-icons-outlined">group</span>
-            <span>Nosotros</span>
+            <span className="material-icons-outlined text-lg">launch</span>
+            <span>V2A Consulting</span>
           </a>
         </nav>
-        {/* <div className="flex items-center space-x-4">
-          <a
-            className="bg-[var(--brand-primary)] text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-opacity-90 transition-opacity flex items-center space-x-2"
-            href="#"
-          >
-            <span className="material-icons-outlined">login</span>
-            <span>Iniciar Sesión</span>
-          </a>
-          <button className="md:hidden text-gray-600">
-            <span className="material-icons-outlined">menu</span>
-          </button>
-        </div> */}
+        
+        {/* Mobile menu button */}
+        <button className="md:hidden text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors">
+          <span className="material-icons-outlined text-2xl">menu</span>
+        </button>
       </div>
     </header>
   );

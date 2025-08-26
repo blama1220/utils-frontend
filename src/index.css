@@ -1,8 +1,22 @@
 :root {
-  --brand-primary: #1A4289;
-  --brand-secondary: #FF8C6B;
-  --brand-accent: #3CB3E4;
+  /* V2A Professional Color Palette */
+  --brand-primary: #0F2942;      /* Deep navy - professional, trustworthy */
+  --brand-secondary: #1B5E8C;    /* Corporate blue - sophisticated */
+  --brand-accent: #FF6B35;       /* Warm orange - energy, innovation */
+  --brand-light: #4A90B8;        /* Light blue - accessibility */
+  --brand-gradient-start: #0F2942;
+  --brand-gradient-end: #1B5E8C;
+  
+  /* Neutral palette */
+  --gray-50: #F8FAFC;
+  --gray-100: #F1F5F9;
+  --gray-200: #E2E8F0;
+  --gray-600: #475569;
+  --gray-700: #334155;
+  --gray-800: #1E293B;
 }
+
 body {
   margin: 0;
+  font-family: 'Inter', 'Segoe UI', 'Roboto', sans-serif;
 }

@@ -24,7 +24,7 @@ const handleDownloadTemplate = async () => {
 
 export default function Consulta() {
   return (
-    <main className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-12">
+    <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-12">
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold text-gray-800 mb-4">Consulta de Comprobante Fiscal</h1>
         <p className="text-gray-600 mb-6">Valida y gestiona tus comprobantes fiscales de manera fácil y rápida</p>
@@ -37,6 +37,6 @@ export default function Consulta() {
         </button>
       </div>
       <QueryInput />
-    </main>
+    </div>
   );
 }

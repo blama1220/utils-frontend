@@ -6,11 +6,13 @@ import Consulta from './pages/Consulta';
 function App() {
   const path = window.location.pathname;
   return (
-    <>
+    <div className="min-h-screen flex flex-col">
       <Header />
-      {path === '/consulta' ? <Consulta /> : <Home />}
+      <main className="flex-1">
+        {path === '/consulta' ? <Consulta /> : <Home />}
+      </main>
       <Footer />
-    </>
+    </div>
   );
 }
 
