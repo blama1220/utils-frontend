@@ -1,4 +1,10 @@
+import { useAuth } from "../hooks/useAuth";
+import UserProfile from "./UserProfile";
+import LoginButton from "./LoginButton";
+
 export default function Header() {
+  const { isAuthenticated, inProgress } = useAuth();
+
   return (
     <header className="bg-white/95 backdrop-blur-md sticky top-0 z-50 border-b border-[var(--gray-200)] shadow-sm">
       <div className="container mx-auto px-6 py-4 flex justify-between items-center">
@@ -26,36 +32,53 @@ export default function Header() {
           </span>
         </div>
         
-        <nav className="hidden md:flex items-center space-x-8">
-          <a
-            className="text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2 font-medium"
-            href="/"
-          >
-            <span className="material-icons-outlined text-lg">home</span>
-            <span>Inicio</span>
-          </a>
-          <a
-            className="text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2 font-medium"
-            href="#"
-          >
-            <span className="material-icons-outlined text-lg">design_services</span>
-            <span>Herramientas</span>
-          </a>
-          <a
-            className="text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2 font-medium"
-            href="https://v2aconsulting.com/es/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span className="material-icons-outlined text-lg">launch</span>
-            <span>V2A Consulting</span>
-          </a>
-        </nav>
-        
-        {/* Mobile menu button */}
-        <button className="md:hidden text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors">
-          <span className="material-icons-outlined text-2xl">menu</span>
-        </button>
+        <div className="flex items-center space-x-6">
+          <nav className="hidden md:flex items-center space-x-8">
+            <a
+              className="text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2 font-medium"
+              href="/"
+            >
+              <span className="material-icons-outlined text-lg">home</span>
+              <span>Inicio</span>
+            </a>
+            <a
+              className="text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2 font-medium"
+              href="/consulta"
+            >
+              <span className="material-icons-outlined text-lg">receipt_long</span>
+              <span>Comprobantes</span>
+            </a>
+            <a
+              className="text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors duration-300 flex items-center space-x-2 font-medium"
+              href="https://v2aconsulting.com/es/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="material-icons-outlined text-lg">launch</span>
+              <span>V2A Consulting</span>
+            </a>
+          </nav>
+
+          {/* Authentication Section */}
+          <div className="flex items-center space-x-4">
+            {!inProgress && (
+              <>
+                {isAuthenticated ? (
+                  <UserProfile />
+                ) : (
+                  <div className="hidden md:block">
+                    <LoginButton />
+                  </div>
+                )}
+              </>
+            )}
+            
+            {/* Mobile menu button */}
+            <button className="md:hidden text-[var(--gray-600)] hover:text-[var(--brand-primary)] transition-colors">
+              <span className="material-icons-outlined text-2xl">menu</span>
+            </button>
+          </div>
+        </div>
       </div>
     </header>
   );
